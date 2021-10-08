@@ -105,29 +105,22 @@ Whether you're looking for a minimal ECS library or a full-fledged system runtim
 - define constants for the features you want to include (see below)
 - remove the files of the features you don't need
 
-Features are split up in addons and modules. Addons implement a specific Flecs feature, like snapshots. Modules are like addons but register their own components and systems, and therefore need to be imported.
-
 #### Addons
-Addons are located in the `src/addons` and `include/addons` folders. The following addons are available:
+Addons are located in the `include/addons` and `src/addons` folders. The following addons are available:
 
 Addon         | Description                                      | Constant            |
---------------|--------------------------------------------------|---------------------|
-Bulk          | Efficient operations that run on many entities   | FLECS_BULK          |
-Dbg           | Debug API for inspection of internals            | FLECS_DBG           |
-Stats         | Collect statistics on entities and systems       | FLECS_STATS         |
-Direct Access | Low-level API for direct access to component data| FLECS_DIRECT_ACCESS |
-Module        | Organize components and systems in modules       | FLECS_MODULE        | 
-Queue         | A queue data structure                           | FLECS_QUEUE         |
-Snapshot      | Take a snapshot that can be restored  afterwards | FLECS_SNAPSHOT      |
-
-#### Builtin modules
-Modules are located in the `src/modules` and `include/modules` folders. The following modules are available:
-
-Module        | Description                                      | Constant            |
 --------------|--------------------------------------------------|---------------------|
 System        | Support for systems, monitors and triggers       | FLECS_SYSTEM        | 
 Pipeline      | Run systems each frame and/or multithreaded      | FLECS_PIPELINE      |
 Timer         | Run systems at intervals, timeouts or fixed rate | FLECS_TIMER         | 
+Meta          | Reflection for (de)serializing component data    | FLECS_META          | 
+Expr          | (De)serialize components to/from strings         | FLECS_EXPR          | 
+JSON          | (De)serialize components to/from JSON            | FLECS_JSON          | 
+Plecs         | Tiny entity definition language                  | FLECS_PLECS         | 
+Stats         | Collect statistics on entities and systems       | FLECS_STATS         |
+Module        | Organize components and systems in modules       | FLECS_MODULE        | 
+Snapshot      | Take a snapshot that can be restored afterwards  | FLECS_SNAPSHOT      |
+Deprecated    | Deprecated functions & features                  | FLECS_DEPRECATED    |
 
 ## API design
 
