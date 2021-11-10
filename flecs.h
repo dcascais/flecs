@@ -7025,7 +7025,7 @@ void ecs_reset_clock(
  * @param pipeline The pipeline to run.
  */
 FLECS_API 
-void ecs_pipeline_run(
+void ecs_run_pipeline(
     ecs_world_t *world,
     ecs_entity_t pipeline,
     FLECS_FLOAT delta_time);    
@@ -10081,10 +10081,8 @@ void FlecsRestImport(
 
 #pragma once
 
-// The only bit of STL that the C++ API needs
-#include <type_traits>
-
 // C++ utilities
+#include <type_traits>
 ////////////////////////////////////////////////////////////////////////////////
 //// Flecs STL (FTL?)
 //// Minimalistic utilities that allow for STL like functionality without having
@@ -10624,12 +10622,21 @@ struct mixin_list { };
 
 // Used for last element in mixins list (see next)
 template <typename T, typename Mixin>
-struct extendable_impl { };
+struct extendable_impl { 
+    void init_mixins() { }
+};
 
 // Recursively unpack the elements in the mixin list. Add current mixin as base
 // base class, wrap remaining mixins in a new list & pass to self.
 template <typename T, FLECS_MIXIN Mixin, FLECS_MIXIN ... Mixins>
-struct extendable_impl<T, mixin_list<Mixin, Mixins...> > : Mixin<T>, extendable_impl<T, mixin_list< Mixins... >> { };
+struct extendable_impl<T, mixin_list<Mixin, Mixins...> > : Mixin<T>, extendable_impl<T, mixin_list< Mixins... >> {
+    using Base = extendable_impl<T, mixin_list< Mixins... >>;
+
+    void init_mixins() {
+        Mixin<T>::init();
+        Base::init_mixins();
+    }
+};
 
 // Base class for mixin implementations. The virtual method provides access to
 // the instance of the top-level type.
@@ -10661,7 +10668,6 @@ class id;
 class entity;
 class entity_view;
 class type;
-class pipeline;
 class iter;
 class term;
 class filter_iterator;
@@ -10801,18 +10807,6 @@ static const flecs::entity_t OnRemove = EcsOnRemove;
 static const flecs::entity_t OnSet = EcsOnSet;
 static const flecs::entity_t UnSet = EcsUnSet;
 
-/* Builtin pipeline tags */
-static const flecs::entity_t PreFrame = EcsPreFrame;
-static const flecs::entity_t OnLoad = EcsOnLoad;
-static const flecs::entity_t PostLoad = EcsPostLoad;
-static const flecs::entity_t PreUpdate = EcsPreUpdate;
-static const flecs::entity_t OnUpdate = EcsOnUpdate;
-static const flecs::entity_t OnValidate = EcsOnValidate;
-static const flecs::entity_t PostUpdate = EcsPostUpdate;
-static const flecs::entity_t PreStore = EcsPreStore;
-static const flecs::entity_t OnStore = EcsOnStore;
-static const flecs::entity_t PostFrame = EcsPostFrame;
-
 /** Builtin roles */
 static const flecs::entity_t Pair = ECS_PAIR;
 static const flecs::entity_t Switch = ECS_SWITCH;
@@ -10852,8 +10846,6 @@ static const flecs::entity_t Throw = EcsThrow;
 
 // Addon forward declarations
 
-// #include "system_builder.hpp"
-
 namespace flecs {
 
 template<typename ... Components>
@@ -10862,8 +10854,13 @@ class system;
 template<typename ... Components>
 class system_builder;
 
+/** System mixin.
+ * Makes system methods available on world instance.
+ */
 template<typename T>
 struct system_m : mixin<T> {
+  /** Initialize mixin. */
+  void init();
 
   /** Upcast entity to a system.
    * The provided entity must be a system.
@@ -10885,9 +10882,47 @@ struct system_m : mixin<T> {
 
 }
 
-// Active mixins
 namespace flecs {
-using Mixins = mixin_list<system_m>;
+
+class pipeline;
+
+/* Builtin pipeline tags */
+static const flecs::entity_t PreFrame = EcsPreFrame;
+static const flecs::entity_t OnLoad = EcsOnLoad;
+static const flecs::entity_t PostLoad = EcsPostLoad;
+static const flecs::entity_t PreUpdate = EcsPreUpdate;
+static const flecs::entity_t OnUpdate = EcsOnUpdate;
+static const flecs::entity_t OnValidate = EcsOnValidate;
+static const flecs::entity_t PostUpdate = EcsPostUpdate;
+static const flecs::entity_t PreStore = EcsPreStore;
+static const flecs::entity_t OnStore = EcsOnStore;
+static const flecs::entity_t PostFrame = EcsPostFrame;
+
+/** Pipeline mixin.
+ * Makes pipeline methods available on world instance.
+ */
+template<typename T>
+struct pipeline_m : mixin<T> {
+  /** Initialize mixin. */
+  void init() { }
+
+  /** Create a new pipeline.
+   *
+   * @tparam Args Arguments to pass into the constructor of flecs::system.
+   * @return System builder.
+   */
+  template <typename... Args>
+  flecs::pipeline pipeline(Args &&... args) const;
+};
+
+}
+
+// Mixins
+namespace flecs {
+using Mixins = mixin_list<
+    system_m, 
+    pipeline_m
+>;
 }
 
 
@@ -12051,15 +12086,8 @@ inline void set(world_t *world, entity_t entity, const A& value) {
  * The world is the container of all ECS data and systems. If the world is
  * deleted, all data in the world will be deleted as well.
  */
-class world_impl : public extendable<world, Mixins> {
+class world final : public extendable<world, Mixins> {
 public:
-    void init_builtin_components();
-
-    world_t *m_world;
-    bool m_owned;
-};
-
-class world : public world_impl {
     /** Create world.
      */
     explicit world() 
@@ -12798,11 +12826,6 @@ class world : public world_impl {
     template <typename... Args>
     flecs::type type(Args &&... args) const;
 
-    /** Create a pipeline.
-     */
-    template <typename... Args>
-    flecs::pipeline pipeline(Args &&... args) const;
-
     /** Create a module.
      */
     template <typename Module, typename... Args>
@@ -12867,6 +12890,14 @@ class world : public world_impl {
      */
     template <typename... Args>
     flecs::snapshot snapshot(Args &&... args) const;
+
+public:
+    friend extendable<world, Mixins>;
+
+    void init_builtin_components();
+
+    world_t *m_world;
+    bool m_owned;
 };
 
 } // namespace flecs
@@ -17962,13 +17993,14 @@ inline void world::init_builtin_components() {
     component<Observer>("flecs::core::Observer");
     component<Query>("flecs::core::Query");
 
-    component<TickSource>("flecs::system::TickSource");
     component<RateFilter>("flecs::timer::RateFilter");
     component<Timer>("flecs::timer::Timer");
 
     component<doc::Description>("flecs::doc::Description");
 
     component<rest::Rest>("flecs::rest::Rest");
+
+    this->init_mixins();
 }
 
 template <typename T>
@@ -18072,11 +18104,6 @@ inline flecs::entity world::prefab(Args &&... args) const {
 template <typename... Args>
 inline flecs::type world::type(Args &&... args) const {
     return flecs::type(*this, std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-inline flecs::pipeline world::pipeline(Args &&... args) const {
-    return flecs::pipeline(*this, std::forward<Args>(args)...);
 }
 
 template <typename... Comps, typename... Args>
@@ -18650,14 +18677,19 @@ public:
 
 // Mixin implementation
 template <typename T>
+void system_m<T>::init() {
+    this->self().template component<TickSource>("flecs::system::TickSource");
+}
+
+template <typename T>
 inline system<> system_m<T>::system(flecs::entity e) const {
-    return system<>(this->self().m_world, e);
+    return flecs::system<>(this->self().m_world, e);
 }
 
 template <typename T>
 template <typename... Comps, typename... Args>
 inline system_builder<Comps...> system_m<T>::system(Args &&... args) const {
-    return system_builder<Comps...>(this->self(), std::forward<Args>(args)...);
+    return flecs::system_builder<Comps...>(this->self(), std::forward<Args>(args)...);
 }
 
 // Builder implementation
@@ -18680,6 +18712,16 @@ inline system<Components ...> system_builder<Components...>::each(Func&& func) c
 }
 
 } // namespace flecs
+
+namespace flecs {
+
+template <typename T>
+template <typename... Args>
+inline flecs::pipeline pipeline_m<T>::pipeline(Args &&... args) const {
+    return flecs::pipeline(*this, std::forward<Args>(args)...);
+}
+
+}
 #endif
 
 #endif
